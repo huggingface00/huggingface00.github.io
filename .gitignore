@@ -1,0 +1,13 @@
+# Ignore data files
+nodes.csv
+edges.csv
+
+# Ignore generated Graphviz files
+graph.dot
+graph.svg
+
+# Ignore Python virtual environment
+venv/
+
+# Ignore system files (optional but useful)
+.DS_Store
