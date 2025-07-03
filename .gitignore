@@ -11,3 +11,6 @@ venv/
 
 # Ignore system files (optional but useful)
 .DS_Store
+
+  nodes_Apr_30.csv
+  precomputed_edges_apr_30.dot
