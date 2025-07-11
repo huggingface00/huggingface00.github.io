@@ -10,7 +10,7 @@
 from neo4j import GraphDatabase
 
 uri = "neo4j+s://72da2fde.databases.neo4j.io"
-auth = ("neo4j", "6OEkKBIcouM-Ngx6nIV1IXkDKsIBrKuvTIpVkB1730s")
+auth = ("neo4j", "iByx_b0QLYjEe9UyY4Kd3ez-RtHDXgT-CX8T_p8QEJU")
 
 driver = GraphDatabase.driver(uri, auth=auth)
 
