@@ -8,3 +8,4 @@ venv/
 # Ignore system files (optional but useful)
 .DS_Store
 
+precomputed_edges_apr_30 (1).dot
