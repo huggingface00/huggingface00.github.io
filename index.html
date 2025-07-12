@@ -3,112 +3,844 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Graph Visualization</title>
+    <title>Graph Visualization Interface - Graphviz</title>
+
+    <!-- Simple working visualization without external Graphviz dependencies -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
+            padding: 0;
+            background-color: #f4f4f4;
         }
-        
+
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        
-        .header {
-            background: #333;
-            color: white;
             padding: 20px;
+            max-width: 1400px;
+            margin: auto;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .header {
             text-align: center;
+            padding-bottom: 20px;
         }
-        
-        .controls {
-            padding: 15px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #ddd;
+
+        .input-section, .output-section {
+            margin-bottom: 30px;
         }
-        
-        button {
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .button-group button {
+            padding: 12px 20px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
             background: #007bff;
             color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 10px;
+            font-size: 14px;
         }
-        
-        button:hover {
+
+        .button-group button:hover {
             background: #0056b3;
         }
-        
-        .graph-container {
-            height: 600px;
-            position: relative;
+
+        .button-group button.secondary {
+            background: #6c757d;
         }
-        
-        iframe {
+
+        .button-group button.secondary:hover {
+            background: #545b62;
+        }
+
+        .dot-textarea {
             width: 100%;
-            height: 100%;
-            border: none;
-        }
-        
-        .status {
+            height: 200px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
             padding: 10px;
+        }
+
+        #graphviz-container {
+            width: 100%;
+            min-height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            padding: 10px;
+            overflow: auto;
+        }
+
+        #graphviz-container svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
             background: #e9ecef;
-            text-align: center;
-            font-size: 14px;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .file-path-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Graph Visualization</h1>
+            <h1>Real Graph Traversal Visualization - Graphviz</h1>
+            <p>Load graph.dot file and perform BFS/DFS traversal with Graphviz rendering</p>
         </div>
-        
-        <div class="controls">
-            <button onclick="loadGraph()">Load Graph</button>
-            <button onclick="refreshGraph()">Refresh</button>
+
+        <!-- FILE PATH CONFIGURATION SECTION -->
+        <div class="file-path-section">
+            <div class="input-group">
+                <label for="filePath">📁 Graph File Path</label>
+                <input type="text" id="filePath" placeholder="Enter path to your graph.dot file (e.g., ./graph.dot, /path/to/graph.dot)" value="graph.dot">
+                <small style="color: #666; margin-top: 5px; display: block;">
+                    Change this to your actual file path. Make sure the file is accessible via HTTP when serving this HTML.
+                </small>
+            </div>
         </div>
-        
-        <div class="graph-container">
-            <iframe id="graphFrame" src="./graph_visualization.html"></iframe>
+
+        <div class="input-section">
+            <div class="grid">
+                <div class="input-group">
+                    <label for="startNode">Start Node (Model Name)</label>
+                    <input type="text" id="startNode" placeholder="Enter model name from your graph">
+                </div>
+                <div class="input-group">
+                    <label for="algorithm">Traversal Algorithm</label>
+                    <select id="algorithm">
+                        <option value="BFS">BFS (Breadth-First Search)</option>
+                        <option value="DFS">DFS (Depth-First Search)</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="maxDepth">Max Depth</label>
+                    <input type="number" id="maxDepth" placeholder="Maximum traversal depth" value="5" min="1" max="15">
+                </div>
+                <div class="input-group">
+                    <label for="layout">Graphviz Layout</label>
+                    <select id="layout">
+                        <option value="dot">dot (hierarchical)</option>
+                        <option value="neato">neato (spring model)</option>
+                        <option value="fdp">fdp (force-directed)</option>
+                        <option value="circo">circo (circular)</option>
+                        <option value="twopi">twopi (radial)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <button onclick="performTraversal()">🚀 Run Traversal</button>
+                <button onclick="clearResults()" class="secondary">🗑️ Clear Results</button>
+                <button onclick="showGraphStats()" class="secondary">📊 Graph Stats</button>
+                <button onclick="loadFullGraph()" class="secondary">📈 Load Full Graph</button>
+            </div>
         </div>
-        
-        <div class="status" id="status">
-            Ready - Upload graph_visualization.html to see your graph
+
+        <div id="status" class="status" style="display: none;"></div>
+
+        <div class="output-section">
+            <div class="grid">
+                <div>
+                    <h2>Graphviz Visualization</h2>
+                    <div id="graphviz-container">
+                        <div style="text-align: center; padding: 50px; color: #666;">
+                            Enter model name and run traversal to see visualization
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h2>DOT Format Output</h2>
+                    <textarea class="dot-textarea" id="dotOutput" readonly placeholder="Traversal results in DOT format will appear here..."></textarea>
+                    <div style="margin-top: 10px;">
+                        <button onclick="copyDotFormat()" class="secondary">📋 Copy Results</button>
+                        <button onclick="downloadDotFile()" class="secondary">⬇️ Download</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        function loadGraph() {
-            document.getElementById('status').textContent = 'Loading graph...';
-            const iframe = document.getElementById('graphFrame');
-            iframe.src = './graph_visualization.html?' + new Date().getTime();
+        let fullGraph = {};
+        
+        // Skip Graphviz entirely - use D3.js for simple network visualization
+        async function initGraphviz() {
+            if (typeof d3 !== 'undefined') {
+                console.log('Using D3.js for visualization');
+                return true;
+            }
+            showStatus('Using simple text rendering', 'info');
+            return false;
+        }
+
+        async function performTraversal() {
+            const startNode = document.getElementById('startNode').value.trim();
+            const algorithm = document.getElementById('algorithm').value;
+            const maxDepth = parseInt(document.getElementById('maxDepth').value, 10);
+            const layout = document.getElementById('layout').value;
             
-            iframe.onload = function() {
-                document.getElementById('status').textContent = 'Graph loaded successfully';
-            };
+            // GET THE FILE PATH FROM THE INPUT FIELD
+            const filePath = document.getElementById('filePath').value.trim();
+
+            if (!startNode) {
+                showStatus('Please enter a valid start node.', 'error');
+                return;
+            }
+
+            if (!filePath) {
+                showStatus('Please enter a valid file path.', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Loading graph file from: ' + filePath, '');
+                
+                // USE THE USER-PROVIDED FILE PATH HERE
+                const response = await fetch(filePath);
+                if (!response.ok) {
+                    throw new Error(`Failed to load ${filePath}: ${response.status}`);
+                }
+                
+                const dotText = await response.text();
+                const lines = dotText.split('\n');
+                
+                showStatus('Parsing graph structure...', '');
+                
+                // Parse DOT file to build adjacency list
+                fullGraph = {};
+                const nodeLabels = {}; // Map from ID to label
+                const labelToId = {}; // Map from label to ID
+                const edgeNodes = new Set(); // Track all nodes mentioned in edges
+                let edgesFound = 0;
+                
+                // First pass: collect node definitions with labels
+                for (let line of lines) {
+                    line = line.trim();
+                    
+                    // Parse node definitions: 0 [label="open-thoughts/OpenThoughts3-1.2M"];
+                    const nodeMatch = line.match(/(\w+)\s*\[.*label="([^"]+)".*\]/);
+                    if (nodeMatch) {
+                        const id = nodeMatch[1];
+                        const label = nodeMatch[2];
+                        nodeLabels[id] = label;
+                        labelToId[label] = id;
+                        console.log(`Found labeled node: ${id} -> ${label}`);
+                    }
+                }
+                
+                // Second pass: collect edges and track all referenced nodes
+                for (let line of lines) {
+                    line = line.trim();
+                    
+                    // Skip empty lines, comments, and graph declarations
+                    if (!line || line.startsWith('//') || line.startsWith('#') || 
+                        line.includes('digraph') || line.includes('graph') || line === '}' || line === '{') {
+                        continue;
+                    }
+                    
+                    // Enhanced patterns to handle different edge formats
+                    const patterns = [
+                        /"([^"]+)"\s*->\s*"([^"]+)"/,           // "0002805" -> "0006125" or "model/name" -> "other/model"
+                        /'([^']+)'\s*->\s*'([^']+)'/,           // 'model/name' -> 'other/model'
+                        /(\w+)\s*->\s*(\w+)/,                   // numeric IDs: 121958 -> 46047
+                        /"([^"]+)"\s*->\s*(\w+)/,               // "quoted" -> unquoted
+                        /(\w+)\s*->\s*"([^"]+)"/                // unquoted -> "quoted"
+                    ];
+                    
+                    for (const pattern of patterns) {
+                        const match = line.match(pattern);
+                        if (match) {
+                            let from = match[1].trim();
+                            let to = match[2].trim();
+                            
+                            // Handle leading zeros: "0002805" -> "2805"
+                            if (from.match(/^0+\d+$/)) {
+                                from = from.replace(/^0+/, '') || '0';
+                            }
+                            if (to.match(/^0+\d+$/)) {
+                                to = to.replace(/^0+/, '') || '0';
+                            }
+                            
+                            // Track all nodes referenced in edges
+                            edgeNodes.add(from);
+                            edgeNodes.add(to);
+                            
+                            // For display purposes, use labels if available, otherwise use raw IDs
+                            const fromDisplay = nodeLabels[from] || from;
+                            const toDisplay = nodeLabels[to] || to;
+                            
+                            if (from && to && from !== to) {
+                                // Use original IDs for graph structure
+                                if (!fullGraph[from]) fullGraph[from] = [];
+                                if (!fullGraph[from].includes(to)) {
+                                    fullGraph[from].push(to);
+                                    edgesFound++;
+                                }
+                                // Ensure target node exists in graph
+                                if (!fullGraph[to]) fullGraph[to] = [];
+                                
+                                // Also create entries with display names for easier access
+                                if (fromDisplay !== from && nodeLabels[from]) {
+                                    if (!fullGraph[fromDisplay]) fullGraph[fromDisplay] = [];
+                                    if (!fullGraph[fromDisplay].includes(toDisplay)) {
+                                        fullGraph[fromDisplay].push(toDisplay);
+                                    }
+                                    if (!fullGraph[toDisplay]) fullGraph[toDisplay] = [];
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                console.log('Node labels found:', Object.keys(nodeLabels).length);
+                console.log('Nodes in edges:', edgeNodes.size);
+                console.log('Total graph nodes:', Object.keys(fullGraph).length);
+
+                console.log('Parsed graph:', fullGraph);
+                console.log(`Found ${Object.keys(fullGraph).length} nodes with ${edgesFound} edges`);
+                
+                // Check if start node exists (try both direct name and as label)
+                let actualStartNode = startNode;
+                if (!fullGraph[startNode]) {
+                    // Try to find by label
+                    const foundByLabel = Object.keys(fullGraph).find(key => 
+                        key.toLowerCase().includes(startNode.toLowerCase()) ||
+                        startNode.toLowerCase().includes(key.toLowerCase())
+                    );
+                    
+                    if (foundByLabel) {
+                        actualStartNode = foundByLabel;
+                        showStatus(`Using "${foundByLabel}" (found by partial match)`, 'info');
+                    } else {
+                        // Check if it exists as a target
+                        let foundAsTarget = false;
+                        for (const [source, targets] of Object.entries(fullGraph)) {
+                            if (targets.includes(startNode)) {
+                                foundAsTarget = true;
+                                fullGraph[startNode] = []; // Add as node with no outgoing edges
+                                actualStartNode = startNode;
+                                break;
+                            }
+                        }
+                        
+                        if (!foundAsTarget) {
+                            const availableNodes = Object.keys(fullGraph).slice(0, 10);
+                            showStatus(`Start node "${startNode}" not found. Available nodes: ${availableNodes.join(', ')}...`, 'error');
+                            return;
+                        }
+                    }
+                }
+
+                showStatus(`Running ${algorithm} traversal...`, '');
+                
+                // Perform traversal
+                const visited = new Set();
+                const traversalOrder = [];
+                const traversalEdges = [];
+
+                function bfs(node, depth) {
+                    const queue = [[node, 0]];
+                    visited.add(node);
+                    traversalOrder.push(node);
+                    
+                    while (queue.length > 0) {
+                        const [current, d] = queue.shift();
+                        
+                        const neighbors = fullGraph[current] || [];
+                        for (const neighbor of neighbors) {
+                            traversalEdges.push({ from: current, to: neighbor });
+                            
+                            if (!visited.has(neighbor) && d + 1 <= depth) {
+                                visited.add(neighbor);
+                                traversalOrder.push(neighbor);
+                                queue.push([neighbor, d + 1]);
+                            }
+                        }
+                    }
+                }
+
+                function dfs(node, depth, d = 0) {
+                    if (d > depth) return;
+                    
+                    if (!visited.has(node)) {
+                        visited.add(node);
+                        traversalOrder.push(node);
+                    }
+                    
+                    const neighbors = fullGraph[node] || [];
+                    for (const neighbor of neighbors) {
+                        traversalEdges.push({ from: node, to: neighbor });
+                        
+                        if (!visited.has(neighbor) && d + 1 <= depth) {
+                            dfs(neighbor, depth, d + 1);
+                        }
+                    }
+                }
+
+                // Run traversal
+                if (algorithm === 'BFS') {
+                    bfs(actualStartNode, maxDepth);
+                } else {
+                    dfs(actualStartNode, maxDepth);
+                }
+
+                console.log(`${algorithm} traversal found ${traversalOrder.length} nodes and ${traversalEdges.length} edges`);
+                
+                if (traversalOrder.length === 0) {
+                    showStatus('No nodes found in traversal. Check if start node has any connections.', 'error');
+                    return;
+                }
+
+                // Generate DOT format for traversal result
+                const dotOutput = generateTraversalDot(traversalOrder, traversalEdges, algorithm, startNode);
+                document.getElementById('dotOutput').value = dotOutput;
+
+                // Render with Graphviz (with fallback)
+                showStatus('Rendering visualization...', '');
+                await renderWithGraphviz(dotOutput, layout);
+                
+                showStatus(`${algorithm} complete: ${traversalOrder.length} nodes, ${traversalEdges.length} edges visualized`, 'success');
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function renderWithGraphviz(dotContent, layout = 'dot') {
+            const container = document.getElementById('graphviz-container');
             
-            iframe.onerror = function() {
-                document.getElementById('status').textContent = 'Error: graph_visualization.html not found';
-            };
+            try {
+                // Parse DOT content and create D3.js force-directed graph
+                if (typeof d3 !== 'undefined') {
+                    console.log('Rendering with D3.js force simulation');
+                    renderWithD3(dotContent, container);
+                    return;
+                }
+                
+                // Fallback to enhanced text visualization
+                renderTextFallback(dotContent, container);
+                
+            } catch (error) {
+                console.error('Rendering error:', error);
+                renderTextFallback(dotContent, container);
+                showStatus('Using text fallback due to rendering error', 'error');
+            }
         }
         
-        function refreshGraph() {
-            loadGraph();
+        function renderWithD3(dotContent, container) {
+            // Parse DOT content to extract nodes and edges
+            const lines = dotContent.split('\n');
+            const nodes = new Map();
+            const edges = [];
+            
+            lines.forEach(line => {
+                const match = line.match(/"([^"]+)"\s*->\s*"([^"]+)"/);
+                if (match) {
+                    const from = match[1];
+                    const to = match[2];
+                    
+                    if (!nodes.has(from)) nodes.set(from, { id: from, group: 1 });
+                    if (!nodes.has(to)) nodes.set(to, { id: to, group: 2 });
+                    
+                    edges.push({ source: from, target: to });
+                }
+            });
+            
+            const nodeArray = Array.from(nodes.values());
+            const edgeArray = edges;
+            
+            // Clear container
+            container.innerHTML = '';
+            
+            // Set up larger SVG for better visibility
+            const width = container.clientWidth || 1200;
+            const height = 800;
+            
+            const svg = d3.select(container)
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+            
+            // Add zoom and pan functionality
+            const g = svg.append('g');
+            
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+            
+            svg.call(zoom);
+            
+            // Create force simulation with better spacing
+            const simulation = d3.forceSimulation(nodeArray)
+                .force('link', d3.forceLink(edgeArray).id(d => d.id).distance(150).strength(0.8))
+                .force('charge', d3.forceManyBody().strength(-400))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(20));
+            
+            // Add edges
+            const link = g.append('g')
+                .selectAll('line')
+                .data(edgeArray)
+                .enter().append('line')
+                .attr('stroke', '#999')
+                .attr('stroke-opacity', 0.4)
+                .attr('stroke-width', 1.5);
+            
+            // Add arrowheads
+            svg.append('defs').append('marker')
+                .attr('id', 'arrowhead')
+                .attr('viewBox', '0 -5 10 10')
+                .attr('refX', 25)
+                .attr('refY', 0)
+                .attr('markerWidth', 6)
+                .attr('markerHeight', 6)
+                .attr('orient', 'auto')
+                .append('path')
+                .attr('d', 'M0,-5L10,0L0,5')
+                .attr('fill', '#666');
+            
+            link.attr('marker-end', 'url(#arrowhead)');
+            
+            // Add nodes with different colors for traversal order
+            const color = d3.scaleOrdinal()
+                .range(['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dda0dd', '#98d8c8', '#f39c12', '#e74c3c', '#9b59b6']);
+            
+            const node = g.append('g')
+                .selectAll('circle')
+                .data(nodeArray)
+                .enter().append('circle')
+                .attr('r', 8)
+                .attr('fill', (d, i) => color(i % 10))
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 2)
+                .style('cursor', 'pointer');
+            
+            // Add labels with better positioning
+            const labels = g.append('g')
+                .selectAll('text')
+                .data(nodeArray)
+                .enter().append('text')
+                .text(d => d.id.length > 8 ? d.id.substring(0, 6) + '...' : d.id)
+                .attr('font-size', '10px')
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('text-anchor', 'middle')
+                .attr('dy', -12)
+                .attr('fill', '#333')
+                .style('pointer-events', 'none');
+            
+            // Add hover effects
+            node.on('mouseover', function(event, d) {
+                d3.select(this).attr('r', 12);
+                // Show full node ID on hover
+                const tooltip = g.append('text')
+                    .attr('id', 'tooltip')
+                    .attr('x', d.x)
+                    .attr('y', d.y - 20)
+                    .attr('text-anchor', 'middle')
+                    .attr('font-size', '12px')
+                    .attr('font-weight', 'bold')
+                    .attr('fill', '#000')
+                    .attr('background', '#fff')
+                    .text(d.id);
+            }).on('mouseout', function(event, d) {
+                d3.select(this).attr('r', 8);
+                g.select('#tooltip').remove();
+            });
+            
+            // Update positions on simulation tick
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                
+                node
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+                
+                labels
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y);
+            });
+            
+            // Add drag functionality
+            node.call(d3.drag()
+                .on('start', dragstarted)
+                .on('drag', dragged)
+                .on('end', dragended));
+            
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+            
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+            
+            // Add controls info
+            const controls = container.appendChild(document.createElement('div'));
+            controls.style.cssText = 'position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 5px; font-size: 12px;';
+            controls.innerHTML = `
+                <strong>Controls:</strong><br>
+                • Mouse wheel: Zoom<br>
+                • Drag background: Pan<br>
+                • Drag nodes: Move<br>
+                • Hover nodes: See full ID
+            `;
+            
+            console.log(`D3.js rendered ${nodeArray.length} nodes and ${edgeArray.length} edges`);
         }
         
-        window.onload = function() {
-            loadGraph();
-        };
+        function renderTextFallback(dotContent, container) {
+            // Parse DOT content and create a simple text visualization
+            const lines = dotContent.split('\n');
+            let html = '<div style="font-family: monospace; padding: 20px;">';
+            html += '<h3>Graph Structure (Text View)</h3>';
+            
+            const edges = [];
+            const nodes = new Set();
+            
+            lines.forEach(line => {
+                const match = line.match(/"([^"]+)"\s*->\s*"([^"]+)"/);
+                if (match) {
+                    const from = match[1];
+                    const to = match[2];
+                    edges.push({from, to});
+                    nodes.add(from);
+                    nodes.add(to);
+                }
+            });
+            
+            html += `<p><strong>Nodes:</strong> ${nodes.size}</p>`;
+            html += `<p><strong>Edges:</strong> ${edges.length}</p><br>`;
+            
+            html += '<div style="border: 1px solid #ccc; padding: 10px; max-height: 400px; overflow-y: auto;">';
+            edges.forEach(edge => {
+                html += `<div style="margin: 5px 0;">${edge.from} → ${edge.to}</div>`;
+            });
+            html += '</div>';
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        async function loadFullGraph() {
+            try {
+                showStatus('Loading full graph...', '');
+                
+                // GET THE FILE PATH FROM THE INPUT FIELD
+                const filePath = document.getElementById('filePath').value.trim();
+                
+                if (!filePath) {
+                    showStatus('Please enter a valid file path.', 'error');
+                    return;
+                }
+                
+                const response = await fetch(filePath);
+                const dotText = await response.text();
+                
+                if (!d3) {
+                    showStatus('D3.js not available - using text rendering', 'info');
+                }
+                
+                const layout = document.getElementById('layout').value;
+                
+                // Render original DOT file directly
+                await renderWithGraphviz(dotText, layout);
+                document.getElementById('dotOutput').value = dotText;
+                
+                showStatus('Full graph loaded successfully', 'success');
+                
+            } catch (error) {
+                console.error('Error loading full graph:', error);
+                showStatus(`Error loading full graph: ${error.message}`, 'error');
+            }
+        }
+
+        function generateTraversalDot(order, edges, algorithm, startNode) {
+            let output = `digraph ${algorithm}_Traversal {\n`;
+            output += `    rankdir=TB;\n`;
+            output += `    node [shape=box, style=filled];\n`;
+            output += `    edge [color=blue];\n\n`;
+            
+            // Add metadata
+            output += `    // ${algorithm} Traversal from "${startNode}"\n`;
+            output += `    // Nodes visited: ${order.length}\n`;
+            output += `    // Edges found: ${edges.length}\n\n`;
+            
+            // Add nodes with colors based on traversal order
+            const colors = ['red', 'orange', 'yellow', 'lightgreen', 'lightblue', 'lightpink', 'lightgray'];
+            order.forEach((node, index) => {
+                const color = colors[index % colors.length];
+                output += `    "${node}" [fillcolor=${color}, label="${node}"];\n`;
+            });
+            
+            output += '\n    // Edges\n';
+            
+            // Add unique edges
+            const uniqueEdges = new Set();
+            edges.forEach(edge => {
+                const edgeKey = `${edge.from}->${edge.to}`;
+                if (!uniqueEdges.has(edgeKey)) {
+                    uniqueEdges.add(edgeKey);
+                    output += `    "${edge.from}" -> "${edge.to}";\n`;
+                }
+            });
+            
+            output += '}';
+            return output;
+        }
+
+        function clearResults() {
+            document.getElementById('graphviz-container').innerHTML = `
+                <div style="text-align: center; padding: 50px; color: #666;">
+                    Enter model name and run traversal to see visualization
+                </div>
+            `;
+            document.getElementById('dotOutput').value = '';
+            showStatus('Results cleared', 'success');
+        }
+
+        function showGraphStats() {
+            const nodeCount = Object.keys(fullGraph).length;
+            const edgeCount = Object.values(fullGraph).reduce((sum, neighbors) => sum + neighbors.length, 0);
+            const sampleNodes = Object.keys(fullGraph).slice(0, 10);
+            
+            const stats = `Graph Statistics:
+• Total nodes: ${nodeCount}
+• Total edges: ${edgeCount}
+• Sample nodes: ${sampleNodes.join(', ')}${sampleNodes.length < Object.keys(fullGraph).length ? '...' : ''}`;
+            
+            alert(stats);
+            showStatus(`Graph contains ${nodeCount} nodes and ${edgeCount} edges`, 'success');
+        }
+
+        function copyDotFormat() {
+            const textarea = document.getElementById('dotOutput');
+            if (!textarea.value) {
+                showStatus('No content to copy', 'error');
+                return;
+            }
+            
+            textarea.select();
+            document.execCommand('copy');
+            showStatus('DOT format copied to clipboard', 'success');
+        }
+
+        function downloadDotFile() {
+            const text = document.getElementById('dotOutput').value;
+            if (!text) {
+                showStatus('No traversal results to download', 'error');
+                return;
+            }
+            
+            const algorithm = document.getElementById('algorithm').value;
+            const startNode = document.getElementById('startNode').value || 'graph';
+            const filename = `${algorithm}_traversal_${startNode.replace(/[^a-zA-Z0-9]/g, '_')}.dot`;
+            
+            const blob = new Blob([text], { type: 'text/plain' });
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = window.URL.createObjectURL(blob);
+            link.click();
+            window.URL.revokeObjectURL(link.href);
+            
+            showStatus(`Downloaded: ${filename}`, 'success');
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = message ? 'block' : 'none';
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', async function() {
+            console.log('Initializing Graph Traversal Tool with Graphviz');
+            showStatus('Loading Graphviz engine...', '');
+            
+            const loaded = await initGraphviz();
+            if (loaded) {
+                showStatus('Ready - Enter file path and model name to begin traversal', 'success');
+            }
+        });
     </script>
 </body>
 </html>

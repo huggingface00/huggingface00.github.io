@@ -1,17 +1,10 @@
-# Ignore data files
-nodes.csv
-edges.csv
-
 # Ignore generated Graphviz files
 graph.dot
-graph.svg
+
 
 # Ignore Python virtual environment
 venv/
 
 # Ignore system files (optional but useful)
 .DS_Store
-
-nodes_Apr_30.csv
-precomputed_edges_apr_30.dot
 
