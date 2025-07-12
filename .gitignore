@@ -1,0 +1,10 @@
+# Ignore generated Graphviz files
+graph.dot
+
+
+# Ignore Python virtual environment
+venv/
+
+# Ignore system files (optional but useful)
+.DS_Store
+
