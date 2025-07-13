@@ -146,7 +146,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Real Graph Traversal Visualization - Graphviz</h1>
+            <h1>AI Supply Chain Visualization and Analysis</h1>
             <p>Load graph.dot file and perform BFS/DFS traversal with Graphviz rendering</p>
         </div>
 
@@ -168,7 +168,7 @@
                     <input type="text" id="startNode" placeholder="Enter model name from your graph">
                 </div>
                 <div class="input-group">
-                    <label for="algorithm">Traversal Algorithm</label>
+                    <label for="algorithm">Algorithm</label>
                     <select id="algorithm">
                         <option value="BFS">BFS (Breadth-First Search)</option>
                         <option value="DFS">DFS (Depth-First Search)</option>
@@ -179,7 +179,7 @@
                     <input type="number" id="maxDepth" placeholder="Maximum traversal depth" value="5" min="1" max="15">
                 </div>
                 <div class="input-group">
-                    <label for="layout">Graphviz Layout</label>
+                    <label for="layout">Layout</label>
                     <select id="layout">
                         <option value="dot">dot (hierarchical)</option>
                         <option value="neato">neato (spring model)</option>
@@ -203,7 +203,7 @@
         <div class="output-section">
             <div class="grid">
                 <div>
-                    <h2>Graphviz Visualization</h2>
+                    <h2>Visualization</h2>
                     <div id="graphviz-container">
                         <div style="text-align: center; padding: 50px; color: #666;">
                             Enter model name and run traversal to see visualization
@@ -265,6 +265,7 @@
                 
                 const dotText = await response.text();
                 const lines = dotText.split('\n');
+                dotFileLines = lines; // Store for model name lookup
                 
                 showStatus('Parsing graph structure...', '');
                 
@@ -289,6 +290,9 @@
                         console.log(`Found labeled node: ${id} -> ${label}`);
                     }
                 }
+                
+                // Store globally for lookup function
+                window.nodeLabelsGlobal = nodeLabels;
                 
                 // Second pass: collect edges and track all referenced nodes
                 for (let line of lines) {
@@ -581,33 +585,56 @@
                 .attr('stroke-width', 2)
                 .style('cursor', 'pointer');
             
-            // Add labels with better positioning
+            // Add labels with model names when available
             const labels = g.append('g')
                 .selectAll('text')
                 .data(nodeArray)
                 .enter().append('text')
-                .text(d => d.id.length > 8 ? d.id.substring(0, 6) + '...' : d.id)
-                .attr('font-size', '10px')
+                .text(d => {
+                    // Try to get model name, fallback to shortened ID
+                    const modelName = getModelNameForNode(d.id);
+                    if (modelName) {
+                        return modelName.length > 15 ? modelName.substring(0, 12) + '...' : modelName;
+                    }
+                    return d.id.length > 8 ? d.id.substring(0, 6) + '...' : d.id;
+                })
+                .attr('font-size', '9px')
                 .attr('font-family', 'Arial, sans-serif')
                 .attr('text-anchor', 'middle')
                 .attr('dy', -12)
                 .attr('fill', '#333')
                 .style('pointer-events', 'none');
             
-            // Add hover effects
+            // Add hover effects with model names
             node.on('mouseover', function(event, d) {
                 d3.select(this).attr('r', 12);
-                // Show full node ID on hover
+                // Show model name and ID on hover
+                const modelName = getModelNameForNode(d.id);
+                let displayText;
+                if (modelName) {
+                    displayText = `${modelName} (ID: ${d.id})`;
+                } else {
+                    // Check if this ID corresponds to any of the 0-99 labeled nodes
+                    const nodeId = parseInt(d.id);
+                    if (nodeId >= 0 && nodeId <= 99 && window.nodeLabelsGlobal && window.nodeLabelsGlobal[nodeId.toString()]) {
+                        displayText = `${window.nodeLabelsGlobal[nodeId.toString()]} (ID: ${d.id})`;
+                    } else {
+                        displayText = `Node ID: ${d.id} (No model name found)`;
+                    }
+                }
+                
                 const tooltip = g.append('text')
                     .attr('id', 'tooltip')
                     .attr('x', d.x)
-                    .attr('y', d.y - 20)
+                    .attr('y', d.y - 25)
                     .attr('text-anchor', 'middle')
-                    .attr('font-size', '12px')
+                    .attr('font-size', '11px')
                     .attr('font-weight', 'bold')
                     .attr('fill', '#000')
-                    .attr('background', '#fff')
-                    .text(d.id);
+                    .attr('stroke', '#fff')
+                    .attr('stroke-width', '2px')
+                    .attr('paint-order', 'stroke fill')
+                    .text(displayText);
             }).on('mouseout', function(event, d) {
                 d3.select(this).attr('r', 8);
                 g.select('#tooltip').remove();
@@ -744,16 +771,19 @@
             output += `    // Nodes visited: ${order.length}\n`;
             output += `    // Edges found: ${edges.length}\n\n`;
             
-            // Add nodes with colors based on traversal order
+            // Add nodes with colors based on traversal order AND model names
             const colors = ['red', 'orange', 'yellow', 'lightgreen', 'lightblue', 'lightpink', 'lightgray'];
             order.forEach((node, index) => {
                 const color = colors[index % colors.length];
-                output += `    "${node}" [fillcolor=${color}, label="${node}"];\n`;
+                // Get the actual model name if available, otherwise use the ID
+                const modelName = getModelNameForNode(node);
+                const displayLabel = modelName || node;
+                output += `    "${node}" [fillcolor=${color}, label="${displayLabel}"];\n`;
             });
             
             output += '\n    // Edges\n';
             
-            // Add unique edges
+            // Add unique edges with model names
             const uniqueEdges = new Set();
             edges.forEach(edge => {
                 const edgeKey = `${edge.from}->${edge.to}`;
@@ -766,6 +796,52 @@
             output += '}';
             return output;
         }
+
+        // Helper function to get model name for a node ID
+        function getModelNameForNode(nodeId) {
+            // First check direct node definitions: nodeId [label="model name"]
+            for (let line of dotFileLines || []) {
+                const nodeMatch = line.match(new RegExp(`\\b${nodeId}\\s*\\[.*label="([^"]+)".*\\]`));
+                if (nodeMatch) {
+                    return nodeMatch[1];
+                }
+            }
+            
+            // If not found, check if this ID maps to any of the 0-99 nodes
+            // Look through the stored nodeLabels mapping
+            if (window.nodeLabelsGlobal && window.nodeLabelsGlobal[nodeId]) {
+                return window.nodeLabelsGlobal[nodeId];
+            }
+            
+            // Try to find patterns where this ID might be referenced
+            const nodeIdStr = nodeId.toString();
+            for (let line of dotFileLines || []) {
+                // Check if this appears as a padded ID in edges that might reference labeled nodes
+                const paddedId = nodeIdStr.padStart(7, '0'); // "0002805" format
+                if (line.includes(`"${paddedId}"`)) {
+                    // Try to trace this back to a labeled node
+                    const match = line.match(/"0*(\d+)"\s*->\s*"0*(\d+)"/);
+                    if (match) {
+                        const fromId = match[1].replace(/^0+/, '') || '0';
+                        const toId = match[2].replace(/^0+/, '') || '0';
+                        
+                        // Check if either of these IDs has a label
+                        if (window.nodeLabelsGlobal) {
+                            if (fromId === nodeIdStr && window.nodeLabelsGlobal[fromId]) {
+                                return window.nodeLabelsGlobal[fromId];
+                            }
+                            if (toId === nodeIdStr && window.nodeLabelsGlobal[toId]) {
+                                return window.nodeLabelsGlobal[toId];
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return null;
+        }
+
+        let dotFileLines = []; // Store the original file lines for label lookup
 
         function clearResults() {
             document.getElementById('graphviz-container').innerHTML = `
