@@ -1,5 +1,5 @@
 # Ignore generated Graphviz files
-graph.dot
+#graph.dot
 
 
 # Ignore Python virtual environment
