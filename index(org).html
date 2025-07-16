@@ -323,7 +323,6 @@
                             let from = match[1].trim();
                             let to = match[2].trim();
                             
-                            // Remove leading zeros from node IDs
                             if (from.match(/^0+\d+$/)) {
                                 from = from.replace(/^0+/, '') || '0';
                             }
@@ -334,25 +333,39 @@
                             edgeNodes.add(from);
                             edgeNodes.add(to);
                             
+                            const fromDisplay = nodeLabels[from] || from;
+                            const toDisplay = nodeLabels[to] || to;
+                            
                             if (from && to && from !== to) {
-                                // Build forward graph (downstream: from -> to)
+                                // Build forward graph (downstream)
                                 if (!fullGraph[from]) fullGraph[from] = [];
                                 if (!fullGraph[from].includes(to)) {
                                     fullGraph[from].push(to);
                                     edgesFound++;
                                 }
-                                // Ensure target node exists in graph
                                 if (!fullGraph[to]) fullGraph[to] = [];
                                 
-                                // Build reverse graph (upstream: to -> from)
-                                // This is the key fix: reverse graph should show what points TO a node
+                                // Build reverse graph (upstream)
                                 if (!reverseGraph[to]) reverseGraph[to] = [];
                                 if (!reverseGraph[to].includes(from)) {
                                     reverseGraph[to].push(from);
                                 }
-                                // Ensure source node exists in reverse graph
                                 if (!reverseGraph[from]) reverseGraph[from] = [];
                                 
+                                // Also create entries with display names for easier access
+                                if (fromDisplay !== from && nodeLabels[from]) {
+                                    if (!fullGraph[fromDisplay]) fullGraph[fromDisplay] = [];
+                                    if (!fullGraph[fromDisplay].includes(toDisplay)) {
+                                        fullGraph[fromDisplay].push(toDisplay);
+                                    }
+                                    if (!fullGraph[toDisplay]) fullGraph[toDisplay] = [];
+                                    
+                                    if (!reverseGraph[toDisplay]) reverseGraph[toDisplay] = [];
+                                    if (!reverseGraph[toDisplay].includes(fromDisplay)) {
+                                        reverseGraph[toDisplay].push(fromDisplay);
+                                    }
+                                    if (!reverseGraph[fromDisplay]) reverseGraph[fromDisplay] = [];
+                                }
                                 break;
                             }
                         }
@@ -361,7 +374,7 @@
                 
                 console.log('Node labels found:', Object.keys(nodeLabels).length);
                 console.log('Nodes in edges:', edgeNodes.size);
-                console.log('Total forward graph nodes:', Object.keys(fullGraph).length);
+                console.log('Total graph nodes:', Object.keys(fullGraph).length);
                 console.log('Total reverse graph nodes:', Object.keys(reverseGraph).length);
                 console.log(`Found ${Object.keys(fullGraph).length} nodes with ${edgesFound} edges`);
                 
@@ -374,51 +387,41 @@
                 const directionLabel = direction === 'upstream' ? 'upstream' : 'downstream';
                 
                 console.log(`Using ${directionLabel} graph with ${Object.keys(graphToUse).length} nodes`);
+                if (direction === 'upstream') {
+                    console.log(`Start node ${startNode} has connections:`, graphToUse[startNode] || 'none');
+                }
                 
                 // Check if start node exists
                 let actualStartNode = startNode;
-                
-                // First try exact match
                 if (!graphToUse[startNode]) {
-                    // Try with leading zeros removed
-                    const cleanStartNode = startNode.replace(/^0+/, '') || '0';
-                    if (graphToUse[cleanStartNode]) {
-                        actualStartNode = cleanStartNode;
-                        showStatus(`Using "${cleanStartNode}" (cleaned node ID)`, 'info');
+                    const foundByLabel = Object.keys(graphToUse).find(key => 
+                        key.toLowerCase().includes(startNode.toLowerCase()) ||
+                        startNode.toLowerCase().includes(key.toLowerCase())
+                    );
+                    
+                    if (foundByLabel) {
+                        actualStartNode = foundByLabel;
+                        showStatus(`Using "${foundByLabel}" (found by partial match)`, 'info');
                     } else {
-                        // Try partial match
-                        const foundByLabel = Object.keys(graphToUse).find(key => 
-                            key.toLowerCase().includes(startNode.toLowerCase()) ||
-                            startNode.toLowerCase().includes(key.toLowerCase())
-                        );
+                        let foundAsTarget = false;
+                        for (const [source, targets] of Object.entries(graphToUse)) {
+                            if (targets.includes(startNode)) {
+                                foundAsTarget = true;
+                                graphToUse[startNode] = [];
+                                actualStartNode = startNode;
+                                break;
+                            }
+                        }
                         
-                        if (foundByLabel) {
-                            actualStartNode = foundByLabel;
-                            showStatus(`Using "${foundByLabel}" (found by partial match)`, 'info');
-                        } else {
-                            // Check if node exists as a target in some edges (even if it has no outgoing edges)
-                            let foundAsTarget = false;
-                            for (const [source, targets] of Object.entries(graphToUse)) {
-                                if (targets.includes(startNode) || targets.includes(cleanStartNode)) {
-                                    foundAsTarget = true;
-                                    // Add the node with empty connections
-                                    graphToUse[startNode] = [];
-                                    actualStartNode = startNode;
-                                    break;
-                                }
-                            }
-                            
-                            if (!foundAsTarget) {
-                                const availableNodes = Object.keys(graphToUse).slice(0, 10);
-                                showStatus(`Start node "${startNode}" not found in ${directionLabel} graph. Available nodes: ${availableNodes.join(', ')}...`, 'error');
-                                return;
-                            }
+                        if (!foundAsTarget) {
+                            const availableNodes = Object.keys(graphToUse).slice(0, 10);
+                            showStatus(`Start node "${startNode}" not found in ${directionLabel} graph. Available nodes: ${availableNodes.join(', ')}...`, 'error');
+                            return;
                         }
                     }
                 }
 
-                console.log(`Start node ${actualStartNode} has ${directionLabel} connections:`, graphToUse[actualStartNode] || 'none');
-                showStatus(`Running ${algorithm} ${directionLabel} traversal from ${actualStartNode}...`, '');
+                showStatus(`Running ${algorithm} ${directionLabel} traversal...`, '');
                 
                 // Perform traversal
                 const visited = new Set();
@@ -435,9 +438,6 @@
                         const neighbors = graphToUse[current] || [];
                         
                         for (const neighbor of neighbors) {
-                            // Add edge to traversal results
-                            // For upstream: show the actual dependency direction (neighbor -> current)
-                            // For downstream: show the dependency direction (current -> neighbor)
                             if (direction === 'upstream') {
                                 traversalEdges.push({ from: neighbor, to: current });
                             } else {
@@ -463,7 +463,6 @@
                     
                     const neighbors = graphToUse[node] || [];
                     for (const neighbor of neighbors) {
-                        // Add edge to traversal results
                         if (direction === 'upstream') {
                             traversalEdges.push({ from: neighbor, to: node });
                         } else {
@@ -491,7 +490,7 @@
                 }
 
                 // Generate DOT format for traversal result
-                const dotOutput = generateTraversalDot(traversalOrder, traversalEdges, algorithm, actualStartNode, direction);
+                const dotOutput = generateTraversalDot(traversalOrder, traversalEdges, algorithm, startNode, direction);
                 document.getElementById('dotOutput').value = dotOutput;
 
                 // Render with D3
@@ -850,18 +849,16 @@
 
         function showGraphStats() {
             const nodeCount = Object.keys(fullGraph).length;
-            const reverseNodeCount = Object.keys(reverseGraph).length;
             const edgeCount = Object.values(fullGraph).reduce((sum, neighbors) => sum + neighbors.length, 0);
             const sampleNodes = Object.keys(fullGraph).slice(0, 10);
             
             const stats = `Graph Statistics:
-• Forward graph nodes: ${nodeCount}
-• Reverse graph nodes: ${reverseNodeCount}
+• Total nodes: ${nodeCount}
 • Total edges: ${edgeCount}
 • Sample nodes: ${sampleNodes.join(', ')}${sampleNodes.length < Object.keys(fullGraph).length ? '...' : ''}`;
             
             alert(stats);
-            showStatus(`Graph contains ${nodeCount} forward nodes, ${reverseNodeCount} reverse nodes, and ${edgeCount} edges`, 'success');
+            showStatus(`Graph contains ${nodeCount} nodes and ${edgeCount} edges`, 'success');
         }
 
         function copyDotFormat() {
