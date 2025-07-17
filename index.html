@@ -420,58 +420,77 @@
                 console.log(`Start node ${actualStartNode} has ${directionLabel} connections:`, graphToUse[actualStartNode] || 'none');
                 showStatus(`Running ${algorithm} ${directionLabel} traversal from ${actualStartNode}...`, '');
                 
-                // Perform traversal
+                // Perform traversal with level and path tracking
                 const visited = new Set();
                 const traversalOrder = [];
                 const traversalEdges = [];
+                const nodeLevels = new Map(); // Track level of each node
+                const nodePaths = new Map(); // Track path to each node
+                const nodeParents = new Map(); // Track immediate parent of each node
 
                 function bfs(node, depth) {
-                    const queue = [[node, 0]];
+                    const queue = [[node, 0, [node]]]; // [node, depth, path]
                     visited.add(node);
                     traversalOrder.push(node);
+                    nodeLevels.set(node, 0); // Start node is at level 0
+                    nodePaths.set(node, [node]); // Path to start node is just itself
                     
                     while (queue.length > 0) {
-                        const [current, d] = queue.shift();
+                        const [current, d, path] = queue.shift();
                         const neighbors = graphToUse[current] || [];
                         
                         for (const neighbor of neighbors) {
+                            const newPath = [...path, neighbor];
+                            
                             // Add edge to traversal results
                             // For upstream: show the actual dependency direction (neighbor -> current)
                             // For downstream: show the dependency direction (current -> neighbor)
                             if (direction === 'upstream') {
-                                traversalEdges.push({ from: neighbor, to: current });
+                                traversalEdges.push({ from: neighbor, to: current, level: d + 1, path: newPath });
                             } else {
-                                traversalEdges.push({ from: current, to: neighbor });
+                                traversalEdges.push({ from: current, to: neighbor, level: d + 1, path: newPath });
                             }
                             
                             if (!visited.has(neighbor) && d + 1 <= depth) {
                                 visited.add(neighbor);
                                 traversalOrder.push(neighbor);
-                                queue.push([neighbor, d + 1]);
+                                nodeLevels.set(neighbor, d + 1); // Set level for neighbor
+                                nodePaths.set(neighbor, newPath); // Store full path to neighbor
+                                nodeParents.set(neighbor, current); // Store immediate parent
+                                queue.push([neighbor, d + 1, newPath]);
                             }
                         }
                     }
                 }
 
-                function dfs(node, depth, d = 0) {
+                function dfs(node, depth, d = 0, path = []) {
                     if (d > depth) return;
+                    
+                    const currentPath = path.length === 0 ? [node] : [...path, node];
                     
                     if (!visited.has(node)) {
                         visited.add(node);
                         traversalOrder.push(node);
+                        nodeLevels.set(node, d); // Set level for current node
+                        nodePaths.set(node, currentPath); // Store path to current node
+                        if (path.length > 0) {
+                            nodeParents.set(node, path[path.length - 1]); // Store immediate parent
+                        }
                     }
                     
                     const neighbors = graphToUse[node] || [];
                     for (const neighbor of neighbors) {
+                        const newPath = [...currentPath, neighbor];
+                        
                         // Add edge to traversal results
                         if (direction === 'upstream') {
-                            traversalEdges.push({ from: neighbor, to: node });
+                            traversalEdges.push({ from: neighbor, to: node, level: d + 1, path: newPath });
                         } else {
-                            traversalEdges.push({ from: node, to: neighbor });
+                            traversalEdges.push({ from: node, to: neighbor, level: d + 1, path: newPath });
                         }
                         
                         if (!visited.has(neighbor) && d + 1 <= depth) {
-                            dfs(neighbor, depth, d + 1);
+                            dfs(neighbor, depth, d + 1, currentPath);
                         }
                     }
                 }
@@ -485,20 +504,63 @@
 
                 console.log(`${algorithm} ${directionLabel} traversal found ${traversalOrder.length} nodes and ${traversalEdges.length} edges`);
                 
+                // Log level information
+                console.log('Node levels:');
+                const levelGroups = {};
+                for (const [node, level] of nodeLevels.entries()) {
+                    if (!levelGroups[level]) levelGroups[level] = [];
+                    levelGroups[level].push(node);
+                    console.log(`  ${node}: Level ${level}`);
+                }
+                
+                // Log path information
+                console.log('\nPaths to each node:');
+                for (const [node, path] of nodePaths.entries()) {
+                    const pathStr = path.join(' → ');
+                    console.log(`  ${node}: ${pathStr} (${path.length - 1} steps)`);
+                }
+                
+                // Find base models (nodes at maximum level)
+                const maxLevel = Math.max(...nodeLevels.values());
+                const baseModels = [];
+                for (const [node, level] of nodeLevels.entries()) {
+                    if (level === maxLevel) {
+                        baseModels.push(node);
+                    }
+                }
+                
+                console.log(`\nBase models at level ${maxLevel}:`, baseModels);
+                console.log('Paths to base models:');
+                baseModels.forEach(baseModel => {
+                    const path = nodePaths.get(baseModel);
+                    if (path) {
+                        console.log(`  ${baseModel}: ${path.join(' → ')} (${path.length - 1} steps)`);
+                    }
+                });
+                
+                // Show level summary
+                const levelSummary = Object.keys(levelGroups).sort((a, b) => a - b).map(level => 
+                    `Level ${level}: ${levelGroups[level].length} nodes`
+                ).join(', ');
+                console.log(`\nLevel summary: ${levelSummary}`);
+                
                 if (traversalOrder.length === 0) {
                     showStatus(`No nodes found in ${directionLabel} traversal. Check if start node has any ${directionLabel} connections.`, 'error');
                     return;
                 }
 
-                // Generate DOT format for traversal result
-                const dotOutput = generateTraversalDot(traversalOrder, traversalEdges, algorithm, actualStartNode, direction);
+                // Generate DOT format for traversal result with levels and paths
+                const dotOutput = generateTraversalDot(traversalOrder, traversalEdges, algorithm, actualStartNode, direction, nodeLevels, nodePaths);
                 document.getElementById('dotOutput').value = dotOutput;
 
                 // Render with D3
                 showStatus('Rendering visualization...', '');
                 await renderWithGraphviz(dotOutput, layout);
                 
-                showStatus(`${algorithm} ${directionLabel} complete: ${traversalOrder.length} nodes, ${traversalEdges.length} edges visualized`, 'success');
+                // Enhanced status with path information
+                const baseModelCount = baseModels.length;
+                const avgPathLength = Array.from(nodePaths.values()).reduce((sum, path) => sum + (path.length - 1), 0) / nodePaths.size;
+                showStatus(`${algorithm} ${directionLabel} complete: ${traversalOrder.length} nodes, ${traversalEdges.length} edges, ${maxLevel + 1} levels, ${baseModelCount} base models, avg path length: ${avgPathLength.toFixed(1)}`, 'success');
                 
             } catch (error) {
                 console.error('Error:', error);
@@ -528,14 +590,55 @@
             const nodes = new Map();
             const edges = [];
             
+            // Parse nodes and their levels more carefully
             lines.forEach(line => {
-                const match = line.match(/"([^"]+)"\s*->\s*"([^"]+)"/);
-                if (match) {
-                    const from = match[1];
-                    const to = match[2];
+                // Extract node information with level - updated regex to handle the new format
+                const nodeMatch = line.match(/"([^"]+)"\s*\[.*label="([^"\\]+)\\nLevel:\s*(\d+)(?:\\nSteps:\s*(\d+))?(?:\\n\[BASE\])?".*\]/);
+                if (nodeMatch) {
+                    const id = nodeMatch[1];
+                    const label = nodeMatch[2];
+                    const level = parseInt(nodeMatch[3]);
+                    const steps = nodeMatch[4] ? parseInt(nodeMatch[4]) : level;
+                    const isBase = line.includes('[BASE]');
+                    nodes.set(id, { 
+                        id, 
+                        label, 
+                        level, 
+                        steps,
+                        isBase,
+                        group: level 
+                    });
+                    console.log(`Parsed node: ${id}, Level: ${level}, Steps: ${steps}, Base: ${isBase}`);
+                }
+                
+                // Also try simpler parsing for nodes without steps
+                if (!nodes.has(line.match(/"([^"]+)"/)?.[1])) {
+                    const simpleNodeMatch = line.match(/"([^"]+)"\s*\[.*label="([^"\\]+)\\nLevel:\s*(\d+)".*\]/);
+                    if (simpleNodeMatch) {
+                        const id = simpleNodeMatch[1];
+                        const label = simpleNodeMatch[2];
+                        const level = parseInt(simpleNodeMatch[3]);
+                        nodes.set(id, { 
+                            id, 
+                            label, 
+                            level, 
+                            steps: level,
+                            isBase: false,
+                            group: level 
+                        });
+                        console.log(`Parsed simple node: ${id}, Level: ${level}`);
+                    }
+                }
+                
+                // Extract edges
+                const edgeMatch = line.match(/"([^"]+)"\s*->\s*"([^"]+)"/);
+                if (edgeMatch) {
+                    const from = edgeMatch[1];
+                    const to = edgeMatch[2];
                     
-                    if (!nodes.has(from)) nodes.set(from, { id: from, group: 1 });
-                    if (!nodes.has(to)) nodes.set(to, { id: to, group: 2 });
+                    // Ensure nodes exist even if not parsed above (fallback)
+                    if (!nodes.has(from)) nodes.set(from, { id: from, level: 0, steps: 0, isBase: false, group: 0 });
+                    if (!nodes.has(to)) nodes.set(to, { id: to, level: 1, steps: 1, isBase: false, group: 1 });
                     
                     edges.push({ source: from, target: to });
                 }
@@ -543,6 +646,12 @@
             
             const nodeArray = Array.from(nodes.values());
             const edgeArray = edges;
+            
+            // Debug: Log parsed node information
+            console.log('Parsed nodes with levels:');
+            nodeArray.forEach(node => {
+                console.log(`  ${node.id}: Level ${node.level}, Steps ${node.steps}, Base: ${node.isBase}`);
+            });
             
             container.innerHTML = '';
             
@@ -568,7 +677,9 @@
                 .force('link', d3.forceLink(edgeArray).id(d => d.id).distance(150).strength(0.8))
                 .force('charge', d3.forceManyBody().strength(-400))
                 .force('center', d3.forceCenter(width / 2, height / 2))
-                .force('collision', d3.forceCollide().radius(20));
+                .force('collision', d3.forceCollide().radius(25))
+                // Add force to separate levels vertically
+                .force('y', d3.forceY(d => (d.level || 0) * 100 + height / 2).strength(0.3));
             
             const link = g.append('g')
                 .selectAll('line')
@@ -592,17 +703,18 @@
             
             link.attr('marker-end', 'url(#arrowhead)');
             
-            const color = d3.scaleOrdinal()
-                .range(['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dda0dd', '#98d8c8', '#f39c12', '#e74c3c', '#9b59b6']);
+            // Color by level
+            const maxLevel = Math.max(...nodeArray.map(d => d.level || 0));
+            const colorScale = d3.scaleSequential(d3.interpolateViridis).domain([0, maxLevel]);
             
             const node = g.append('g')
                 .selectAll('circle')
                 .data(nodeArray)
                 .enter().append('circle')
-                .attr('r', 8)
-                .attr('fill', (d, i) => color(i % 10))
-                .attr('stroke', '#fff')
-                .attr('stroke-width', 2)
+                .attr('r', d => d.isBase ? 16 : 12)
+                .attr('fill', d => colorScale(d.level || 0))
+                .attr('stroke', d => d.isBase ? '#ff0000' : '#fff')
+                .attr('stroke-width', d => d.isBase ? 4 : 2)
                 .style('cursor', 'pointer');
             
             const labels = g.append('g')
@@ -610,48 +722,52 @@
                 .data(nodeArray)
                 .enter().append('text')
                 .text(d => {
-                    const modelName = getModelNameForNode(d.id);
-                    if (modelName) {
-                        return modelName.length > 15 ? modelName.substring(0, 12) + '...' : modelName;
-                    }
-                    return d.id.length > 8 ? d.id.substring(0, 6) + '...' : d.id;
+                    const displayText = d.label || d.id;
+                    return displayText.length > 12 ? displayText.substring(0, 9) + '...' : displayText;
                 })
-                .attr('font-size', '9px')
+                .attr('font-size', '10px')
                 .attr('font-family', 'Arial, sans-serif')
                 .attr('text-anchor', 'middle')
-                .attr('dy', -12)
+                .attr('dy', -18)
                 .attr('fill', '#333')
                 .style('pointer-events', 'none');
             
+            // Add level labels - this was the main issue
+            const levelLabels = g.append('g')
+                .selectAll('text')
+                .data(nodeArray)
+                .enter().append('text')
+                .text(d => `L${d.level || 0}`)
+                .attr('font-size', '8px')
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('text-anchor', 'middle')
+                .attr('dy', 4)
+                .attr('fill', '#fff')
+                .attr('font-weight', 'bold')
+                .style('pointer-events', 'none');
+            
             node.on('mouseover', function(event, d) {
-                d3.select(this).attr('r', 12);
+                d3.select(this).attr('r', d.isBase ? 20 : 16);
                 const modelName = getModelNameForNode(d.id);
-                let displayText;
-                if (modelName) {
-                    displayText = `${modelName} (ID: ${d.id})`;
-                } else {
-                    const nodeId = parseInt(d.id);
-                    if (nodeId >= 0 && nodeId <= 99 && window.nodeLabelsGlobal && window.nodeLabelsGlobal[nodeId.toString()]) {
-                        displayText = `${window.nodeLabelsGlobal[nodeId.toString()]} (ID: ${d.id})`;
-                    } else {
-                        displayText = `Node ID: ${d.id} (No model name found)`;
-                    }
-                }
+                let displayText = `${modelName || d.label || d.id}`;
+                displayText += `\nLevel: ${d.level || 0}`;
+                displayText += `\nSteps: ${d.steps || 0}`;
+                if (d.isBase) displayText += '\n[BASE MODEL]';
                 
                 const tooltip = g.append('text')
                     .attr('id', 'tooltip')
                     .attr('x', d.x)
-                    .attr('y', d.y - 25)
+                    .attr('y', d.y - 35)
                     .attr('text-anchor', 'middle')
-                    .attr('font-size', '11px')
+                    .attr('font-size', '12px')
                     .attr('font-weight', 'bold')
                     .attr('fill', '#000')
                     .attr('stroke', '#fff')
-                    .attr('stroke-width', '2px')
+                    .attr('stroke-width', '3px')
                     .attr('paint-order', 'stroke fill')
                     .text(displayText);
             }).on('mouseout', function(event, d) {
-                d3.select(this).attr('r', 8);
+                d3.select(this).attr('r', d.isBase ? 16 : 12);
                 g.select('#tooltip').remove();
             });
             
@@ -667,6 +783,10 @@
                     .attr('cy', d => d.y);
                 
                 labels
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y);
+                
+                levelLabels
                     .attr('x', d => d.x)
                     .attr('y', d => d.y);
             });
@@ -700,10 +820,29 @@
                 • Mouse wheel: Zoom<br>
                 • Drag background: Pan<br>
                 • Drag nodes: Move<br>
-                • Hover nodes: See full ID
+                • Hover nodes: See details<br>
+                <br><strong>Legend:</strong><br>
+                • Node colors: Level depth<br>
+                • L# inside nodes: Level number<br>
+                • Red border: Base models<br>
+                • Level 0: Starting node
             `;
             
-            console.log(`D3.js rendered ${nodeArray.length} nodes and ${edgeArray.length} edges`);
+            // Add level statistics
+            const levelStats = {};
+            nodeArray.forEach(node => {
+                const level = node.level || 0;
+                levelStats[level] = (levelStats[level] || 0) + 1;
+            });
+            
+            const statsDiv = container.appendChild(document.createElement('div'));
+            statsDiv.style.cssText = 'position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 5px; font-size: 12px;';
+            const statsText = Object.keys(levelStats).sort((a, b) => a - b).map(level => 
+                `Level ${level}: ${levelStats[level]} nodes`
+            ).join('<br>');
+            statsDiv.innerHTML = `<strong>Level Distribution:</strong><br>${statsText}`;
+            
+            console.log(`D3.js rendered ${nodeArray.length} nodes and ${edgeArray.length} edges across ${Object.keys(levelStats).length} levels`);
         }
         
         function renderTextFallback(dotContent, container) {
@@ -769,7 +908,7 @@
             }
         }
 
-        function generateTraversalDot(order, edges, algorithm, startNode, direction) {
+        function generateTraversalDot(order, edges, algorithm, startNode, direction, nodeLevels, nodePaths) {
             let output = `digraph ${algorithm}_${direction}_Traversal {\n`;
             output += `    rankdir=TB;\n`;
             output += `    node [shape=box, style=filled];\n`;
@@ -777,24 +916,91 @@
             
             output += `    // ${algorithm} ${direction} Traversal from "${startNode}"\n`;
             output += `    // Nodes visited: ${order.length}\n`;
-            output += `    // Edges found: ${edges.length}\n\n`;
+            output += `    // Edges found: ${edges.length}\n`;
             
-            const colors = ['red', 'orange', 'yellow', 'lightgreen', 'lightblue', 'lightpink', 'lightgray'];
+            // Add level and path information
+            const maxLevel = nodeLevels ? Math.max(...nodeLevels.values()) : 0;
+            output += `    // Maximum depth: ${maxLevel} levels\n`;
+            
+            // Find base models
+            const baseModels = [];
+            if (nodeLevels) {
+                for (const [node, level] of nodeLevels.entries()) {
+                    if (level === maxLevel) {
+                        baseModels.push(node);
+                    }
+                }
+                output += `    // Base models: ${baseModels.join(', ')}\n\n`;
+            }
+            
+            // Add path information as comments
+            if (nodePaths) {
+                output += `    // Paths to base models:\n`;
+                baseModels.forEach(baseModel => {
+                    const path = nodePaths.get(baseModel);
+                    if (path) {
+                        output += `    // ${baseModel}: ${path.join(' -> ')} (${path.length - 1} steps)\n`;
+                    }
+                });
+                output += '\n';
+            }
+            
+            // Group nodes by level for better visualization
+            if (nodeLevels) {
+                const levelGroups = {};
+                for (const [node, level] of nodeLevels.entries()) {
+                    if (!levelGroups[level]) levelGroups[level] = [];
+                    levelGroups[level].push(node);
+                }
+                
+                // Add level groupings as subgraphs for better layout
+                for (let level = 0; level <= maxLevel; level++) {
+                    if (levelGroups[level]) {
+                        output += `    // Level ${level} (${levelGroups[level].length} nodes)\n`;
+                        output += `    { rank=same; `;
+                        levelGroups[level].forEach(node => output += `"${node}"; `);
+                        output += `}\n`;
+                    }
+                }
+                output += '\n';
+            }
+            
+            // Color nodes by level and add path information
+            const levelColors = ['red', 'orange', 'yellow', 'lightgreen', 'lightblue', 'lightpink', 'lavender', 'lightcyan', 'lightgray'];
             order.forEach((node, index) => {
-                const color = colors[index % colors.length];
+                const level = nodeLevels ? nodeLevels.get(node) : 0;
+                const color = levelColors[level % levelColors.length];
                 const modelName = getModelNameForNode(node);
                 const displayLabel = modelName || node;
-                output += `    "${node}" [fillcolor=${color}, label="${displayLabel}"];\n`;
+                
+                // Add path information to node label
+                const path = nodePaths ? nodePaths.get(node) : null;
+                const pathLength = path ? path.length - 1 : 0;
+                const isBaseModel = level === maxLevel;
+                
+                let nodeLabel = `${displayLabel}\\nLevel: ${level}`;
+                if (pathLength > 0) {
+                    nodeLabel += `\\nSteps: ${pathLength}`;
+                }
+                if (isBaseModel) {
+                    nodeLabel += '\\n[BASE]';
+                }
+                
+                // Highlight base models with different styling
+                const nodeStyle = isBaseModel ? `, style="filled,bold", penwidth=3` : '';
+                output += `    "${node}" [fillcolor=${color}, label="${nodeLabel}"${nodeStyle}];\n`;
             });
             
-            output += '\n    // Edges\n';
+            output += '\n    // Edges with path information\n';
             
             const uniqueEdges = new Set();
             edges.forEach(edge => {
                 const edgeKey = `${edge.from}->${edge.to}`;
                 if (!uniqueEdges.has(edgeKey)) {
                     uniqueEdges.add(edgeKey);
-                    output += `    "${edge.from}" -> "${edge.to}";\n`;
+                    // Add level information to edge labels if available
+                    const edgeLevel = edge.level !== undefined ? ` [label="L${edge.level}"]` : '';
+                    output += `    "${edge.from}" -> "${edge.to}"${edgeLevel};\n`;
                 }
             });
             
